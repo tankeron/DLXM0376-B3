@@ -5,7 +5,7 @@
 
 #define ENABLE_HALL 0
 
-#define MAX_MOTOR_NUM   2
+#define MAX_MOTOR_NUM   3
 #define MAX_MOTOR_STEP  0XFFFF
 #define MIN_ERR         10
 #define MAX_TIMEROUT    100

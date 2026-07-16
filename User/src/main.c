@@ -1,7 +1,7 @@
 //-----------------------------------------------------------------------------/
 //文件名	称:DLXM-0376
-//描	述：第二款 黄丽珍 入仓式控制盒MCU程序(主机程序 带蓝牙音箱和灯带)
-//配置参数:	双电机，通风，按摩，加热 ，音箱，灯带控制
+//描	述：顾家入仓式控制盒MCU程序(主机程序 带蓝牙音箱和灯带)
+//配置参数:	三电机，通风，按摩，加热 ，音箱，灯带控制
 //			与主蓝牙芯片串口通讯，
 //修改记录：
 //-----------------------------------------------------------------------------/
@@ -158,6 +158,14 @@ int main(void)
 						  (void *)NULL,						
 						  (UBaseType_t)1,						
 						  NULL);
+	if (pdPASS != xReturn) return -1;
+						  
+	xReturn = xTaskCreate((TaskFunction_t)Massage_Motor_Task,
+						  (const char *)"massage_motor_Task",
+						  (uint16_t)128,
+						  (void *)NULL,
+						  (UBaseType_t)1,
+						  &Massage_Motor_Task_Handle);
 	if (pdPASS != xReturn) return -1;
 						  
 	xReturn = xTaskCreate((TaskFunction_t)Sound_Box_Task, 
