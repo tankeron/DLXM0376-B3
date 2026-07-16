@@ -1,4 +1,5 @@
 #include "fan_heat_massage.h"
+#include "motor_hall.h"
 
 #define MAX_TX_BUF_SIZE 20
 #define MAX_RX_BUF_SIZE 20
@@ -410,7 +411,7 @@ void fan_heat_massage1_tx_Task(void *parameter)
                 break;
             case 0x02://按摩控制
                 /* code */
-				Massage_Motor_Set_Level(Set_Fan_Heat_Massage_Data.Massage_level);
+                Massage_Motor_Set_Level(Set_Fan_Heat_Massage_Data.Massage_level);
                 tx_buf[i++] = 0xd1;
                 tx_buf[i++] = 0xd1;
                 tx_buf[i++] = 0x06;

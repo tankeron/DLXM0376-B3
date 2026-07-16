@@ -13,7 +13,7 @@ motor_port_t motor_port[MAX_MOTOR_NUM] = {
 
 #if !ENABLE_HALL
 uint16_t ADCConvertedValue[MAX_MOTOR_NUM] = {0};
-#define ADC_LEN     ADC_REGULAR_LEN_2
+#define ADC_LEN     ADC_REGULAR_LEN_3
 motor_port_t motor_port[MAX_MOTOR_NUM] ={
 	{GPIOA,GPIO_PIN_10,GPIOA,GPIO_PIN_11,GPIOB,GPIO_PIN_12,ADC_Channel_14_PB12},
     {GPIOA,GPIO_PIN_9,GPIOA,GPIO_PIN_8,GPIOB,GPIO_PIN_13,ADC_Channel_15_PB13},
