@@ -24,6 +24,7 @@ extern "C" {
 
 #define MASSAGE_MOTOR_RETRACT_MARGIN_TIME_MS     1000U
 #define MASSAGE_MOTOR_TASK_PERIOD_MS             10U
+#define MASSAGE_AUTO_OFF_TIME_MS                  (30UL * 60UL * 1000UL)
 /* Types */
 typedef struct
 {
@@ -58,6 +59,8 @@ void fan_heat_massage1_tx_Task(void *parameter);
 void fan_heat_massage2_tx_Task(void *parameter);
 void Massage_Motor_Task(void *parameter);
 void Massage_Motor_Set_Level(uint8_t level);
+void Massage_Motor_Set_Lumbar(uint8_t command);
+void Massage_Motor_Set_All_Retract(uint8_t enable);
 #ifdef __cplusplus
 }
 #endif

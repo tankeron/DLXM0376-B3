@@ -189,7 +189,7 @@ void ble_control_Task(void* parameter)
 	uint8_t CMD;
 	uint8_t rgb_d = 0;
 	uint32_t find_data = 0;
-	uint16_t motor_cmd_t[MAX_MOTOR_NUM];
+	uint16_t motor_cmd_t[MAX_MOTOR_NUM] = {0};
 	uint8_t machine_mac[6];
     uint8_t ble_rx_buf[BLE_MAX_BUF_LEN] = {0};
     uint8_t ble_tx_count = 0;
@@ -243,6 +243,22 @@ void ble_control_Task(void* parameter)
 						motor_cmd_t[1] = 	ble_rx_buf[6];
 						motor_cmd_t[1] = 	motor_cmd_t[1]<<8;
 						motor_cmd_t[1] |= 	ble_rx_buf[7];
+						motor_cmd_t[2] = 	ble_rx_buf[8];
+						motor_cmd_t[2] = 	motor_cmd_t[2]<<8;
+						motor_cmd_t[2] |= 	ble_rx_buf[9];
+
+						if ((motor_cmd_t[0] == pull) &&
+							(motor_cmd_t[1] == pull) &&
+							(motor_cmd_t[2] == pull))
+						{
+							Massage_Motor_Set_All_Retract(1U);
+						}
+						else if ((motor_cmd_t[0] == stop) &&
+								 (motor_cmd_t[1] == stop) &&
+								 (motor_cmd_t[2] == stop))
+						{
+							Massage_Motor_Set_All_Retract(0U);
+						}
 						xQueueSendFromISR( motor_queue, &motor_cmd_t, NULL);
 					}
 				break;
@@ -252,6 +268,7 @@ void ble_control_Task(void* parameter)
 					xQueueSend(Set_Fan_Heat_Massage_Queue1, &set_fan_heat_massage_temp, 0);
 				break;
 				case MACHINE_LUMBAR:
+					Massage_Motor_Set_Lumbar(ble_rx_buf[4]);
 					set_fan_heat_massage_temp.msg_select = 1;
 					set_fan_heat_massage_temp.Massage_level = ble_rx_buf[4];
 					xQueueSend(Set_Fan_Heat_Massage_Queue1, &set_fan_heat_massage_temp, 0);

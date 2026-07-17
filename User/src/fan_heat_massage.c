@@ -18,6 +18,11 @@ QueueHandle_t cs_status_Queue = NULL;
 Fan_Heat_Massage_Typedef sys_Fan_Heat_Massage_Data1;
 
 #define MASSAGE_MOTOR_ID 2U
+#define MASSAGE_NOTIFY_LUMBAR_STOP       0x10UL
+#define MASSAGE_NOTIFY_LUMBAR_EXTEND     0x11UL
+#define MASSAGE_NOTIFY_LUMBAR_RETRACT    0x12UL
+#define MASSAGE_NOTIFY_ALL_RETRACT_START 0x13UL
+#define MASSAGE_NOTIFY_ALL_RETRACT_STOP  0x14UL
 
 #if MAX_MOTOR_NUM < 3
 #error "Massage motor requires motor[2]"
@@ -30,7 +35,10 @@ typedef enum
     MASSAGE_MOTOR_STATE_INTERVAL,
     MASSAGE_MOTOR_STATE_RETRACT,
     MASSAGE_MOTOR_STATE_CLOSE_WAIT,
-    MASSAGE_MOTOR_STATE_CLOSE_RETRACT
+    MASSAGE_MOTOR_STATE_CLOSE_RETRACT,
+    MASSAGE_MOTOR_STATE_LUMBAR_EXTEND,
+    MASSAGE_MOTOR_STATE_LUMBAR_RETRACT,
+    MASSAGE_MOTOR_STATE_ALL_RETRACT
 } Massage_Motor_State_Typedef;
 
 typedef struct
@@ -41,6 +49,9 @@ typedef struct
     TickType_t phase_start_tick;
     TickType_t phase_duration_ticks;
     TickType_t close_retract_ticks;
+	BaseType_t auto_off_active;
+    uint8_t auto_off_level;
+    TickType_t auto_off_start_tick;
 } Massage_Motor_Control_Typedef;
 
 TaskHandle_t Massage_Motor_Task_Handle = NULL;
@@ -120,6 +131,28 @@ static void Massage_Motor_Handle_Command(Massage_Motor_Control_Typedef *control,
                                          TickType_t now)
 {
     TickType_t elapsed_ticks;
+	
+    if (level == 0U)
+    {
+        control->auto_off_active = pdFALSE;
+        control->auto_off_level = 0U;
+    }
+    else if ((control->auto_off_active == pdFALSE) ||
+             (level != control->auto_off_level))
+    {
+        control->auto_off_active = pdTRUE;
+        control->auto_off_level = level;
+        control->auto_off_start_tick = now;
+    }
+
+    if ((level != 0U) &&
+        ((control->state == MASSAGE_MOTOR_STATE_LUMBAR_EXTEND) ||
+         (control->state == MASSAGE_MOTOR_STATE_LUMBAR_RETRACT) ||
+         (control->state == MASSAGE_MOTOR_STATE_ALL_RETRACT)))
+    {
+        control->state = MASSAGE_MOTOR_STATE_IDLE;
+        motor_stop(MASSAGE_MOTOR_ID);
+    }
 
     if (control->state == MASSAGE_MOTOR_STATE_IDLE)
     {
@@ -167,10 +200,82 @@ static void Massage_Motor_Handle_Command(Massage_Motor_Control_Typedef *control,
     control->requested_level = level;
 }
 
+static void Massage_Motor_Handle_Lumbar_Command(Massage_Motor_Control_Typedef *control,
+                                                uint8_t command)
+{
+    control->auto_off_active = pdFALSE;
+    control->auto_off_level = 0U;
+    control->active_level = 0U;
+    control->requested_level = 0U;
+    control->phase_duration_ticks = 0U;
+    control->close_retract_ticks = 0U;
+
+    if (command == 1U)
+    {
+        control->state = MASSAGE_MOTOR_STATE_LUMBAR_EXTEND;
+        motor_push(MASSAGE_MOTOR_ID);
+    }
+    else if (command == 2U)
+    {
+        control->state = MASSAGE_MOTOR_STATE_LUMBAR_RETRACT;
+        motor_pull(MASSAGE_MOTOR_ID);
+    }
+    else
+    {
+        control->state = MASSAGE_MOTOR_STATE_IDLE;
+        motor_stop(MASSAGE_MOTOR_ID);
+    }
+}
+
+static BaseType_t Massage_Motor_Is_Massage_Process(Massage_Motor_State_Typedef state)
+{
+    switch (state)
+    {
+        case MASSAGE_MOTOR_STATE_EXTEND:
+        case MASSAGE_MOTOR_STATE_INTERVAL:
+        case MASSAGE_MOTOR_STATE_RETRACT:
+        case MASSAGE_MOTOR_STATE_CLOSE_WAIT:
+        case MASSAGE_MOTOR_STATE_CLOSE_RETRACT:
+            return pdTRUE;
+
+        default:
+            return pdFALSE;
+    }
+}
+
+static void Massage_Motor_Handle_All_Retract(Massage_Motor_Control_Typedef *control,
+                                             uint8_t enable)
+{
+    if (Massage_Motor_Is_Massage_Process(control->state) == pdTRUE)
+    {
+        return;
+    }
+
+    if (enable != 0U)
+    {
+        control->auto_off_active = pdFALSE;
+        control->auto_off_level = 0U;
+        control->active_level = 0U;
+        control->requested_level = 0U;
+        control->phase_duration_ticks = 0U;
+        control->close_retract_ticks = 0U;
+        control->state = MASSAGE_MOTOR_STATE_ALL_RETRACT;
+        motor_pull(MASSAGE_MOTOR_ID);
+    }
+    else if (control->state == MASSAGE_MOTOR_STATE_ALL_RETRACT)
+    {
+        control->state = MASSAGE_MOTOR_STATE_IDLE;
+        motor_stop(MASSAGE_MOTOR_ID);
+    }
+}
+
 static void Massage_Motor_Update(Massage_Motor_Control_Typedef *control,
                                  TickType_t now)
 {
     if ((control->state == MASSAGE_MOTOR_STATE_IDLE) ||
+		(control->state == MASSAGE_MOTOR_STATE_LUMBAR_EXTEND) ||
+        (control->state == MASSAGE_MOTOR_STATE_LUMBAR_RETRACT) ||
+        (control->state == MASSAGE_MOTOR_STATE_ALL_RETRACT) ||
         ((now - control->phase_start_tick) < control->phase_duration_ticks))
     {
         return;
@@ -227,12 +332,73 @@ static void Massage_Motor_Update(Massage_Motor_Control_Typedef *control,
     }
 }
 
+static void Massage_Motor_Update_Auto_Off(Massage_Motor_Control_Typedef *control,
+                                          TickType_t now)
+{
+    Fan_Heat_Massage_Typedef auto_off_message =
+    {
+        0x02U,
+        0U,
+        0U,
+        0U,
+        0U
+    };
+
+    if ((control->auto_off_active == pdFALSE) ||
+        ((now - control->auto_off_start_tick) <
+         Massage_Motor_MS_To_Ticks(MASSAGE_AUTO_OFF_TIME_MS)))
+    {
+        return;
+    }
+
+    if (xQueueSend(Set_Fan_Heat_Massage_Queue1, &auto_off_message, 0U) == pdTRUE)
+    {
+        control->auto_off_active = pdFALSE;
+        control->auto_off_level = 0U;
+    }
+}
+
 void Massage_Motor_Set_Level(uint8_t level)
 {
     if ((level <= 3U) && (Massage_Motor_Task_Handle != NULL))
     {
         xTaskNotify(Massage_Motor_Task_Handle, (uint32_t)level, eSetValueWithOverwrite);
     }
+}
+
+void Massage_Motor_Set_Lumbar(uint8_t command)
+{
+    uint32_t notification_value;
+
+    if ((command > 2U) || (Massage_Motor_Task_Handle == NULL))
+    {
+        return;
+    }
+
+    notification_value = MASSAGE_NOTIFY_LUMBAR_STOP;
+    if (command == 1U)
+    {
+        notification_value = MASSAGE_NOTIFY_LUMBAR_EXTEND;
+    }
+    else if (command == 2U)
+    {
+        notification_value = MASSAGE_NOTIFY_LUMBAR_RETRACT;
+    }
+
+    xTaskNotify(Massage_Motor_Task_Handle, notification_value, eSetValueWithOverwrite);
+}
+
+void Massage_Motor_Set_All_Retract(uint8_t enable)
+{
+    uint32_t notification_value;
+
+    if (Massage_Motor_Task_Handle == NULL)
+    {
+        return;
+    }
+
+    notification_value = (enable != 0U) ? MASSAGE_NOTIFY_ALL_RETRACT_START : MASSAGE_NOTIFY_ALL_RETRACT_STOP;
+    xTaskNotify(Massage_Motor_Task_Handle, notification_value, eSetValueWithOverwrite);
 }
 
 void Massage_Motor_Task(void *parameter)
@@ -243,6 +409,9 @@ void Massage_Motor_Task(void *parameter)
         0U,
         0U,
         0U,
+		0U,
+        0U,
+        pdFALSE,
         0U,
         0U
     };
@@ -263,9 +432,25 @@ void Massage_Motor_Task(void *parameter)
                                               (uint8_t)notified_level,
                                               xTaskGetTickCount());
             }
+			else if ((notified_level == MASSAGE_NOTIFY_LUMBAR_STOP) ||
+                     (notified_level == MASSAGE_NOTIFY_LUMBAR_EXTEND) ||
+                     (notified_level == MASSAGE_NOTIFY_LUMBAR_RETRACT))
+            {
+                Massage_Motor_Handle_Lumbar_Command(
+                    &control,
+                    (uint8_t)(notified_level - MASSAGE_NOTIFY_LUMBAR_STOP));
+            }
+            else if ((notified_level == MASSAGE_NOTIFY_ALL_RETRACT_START) ||
+                     (notified_level == MASSAGE_NOTIFY_ALL_RETRACT_STOP))
+            {
+                Massage_Motor_Handle_All_Retract(
+                    &control,
+                    (notified_level == MASSAGE_NOTIFY_ALL_RETRACT_START) ? 1U : 0U);
+            }
         }
 
         Massage_Motor_Update(&control, xTaskGetTickCount());
+		Massage_Motor_Update_Auto_Off(&control, xTaskGetTickCount());
     }
 }
 
@@ -375,6 +560,7 @@ void fan_heat_massage1_tx_Task(void *parameter)
     uint8_t tx_buf[20] = {0};
     uint8_t send_id = 1;
     uint8_t i,j;
+	uint8_t wait_reply;
     USART2_DMA_Init();
     USART2_init();
     while (1)
@@ -382,6 +568,7 @@ void fan_heat_massage1_tx_Task(void *parameter)
         if (xQueueReceive(Set_Fan_Heat_Massage_Queue1, &Set_Fan_Heat_Massage_Data, portMAX_DELAY) == pdTRUE)
         {
             i = 0;
+			wait_reply = 1U;
             switch (Set_Fan_Heat_Massage_Data.msg_select)
             {
             case 0x00:
@@ -395,14 +582,25 @@ void fan_heat_massage1_tx_Task(void *parameter)
                 Usart2_dma_send(tx_buf, i);
                 break;
             case 0x01://顶腰
+				Massage_Motor_Set_Lumbar(Set_Fan_Heat_Massage_Data.Massage_level);
+                if (Set_Fan_Heat_Massage_Data.Massage_level == 0U)
+                {
+                    wait_reply = 0U;
+                    break;
+                }
+                if (Set_Fan_Heat_Massage_Data.Massage_level > 2U)
+                {
+                    wait_reply = 0U;
+                    break;
+                }
                 /* code */
                 tx_buf[i++] = 0xd1;   //帧头
                 tx_buf[i++] = 0xd1;   //帧头
                 tx_buf[i++] = 0x06;   //长度
                 tx_buf[i++] = send_id;  //id
                 tx_buf[i++] = 0x01;     // 0x01:控制   0x02:查询
-                tx_buf[i++] = Set_Fan_Heat_Massage_Data.lumbar_support;   //这个字节暂时没有使用，
-                tx_buf[i++] = Set_Fan_Heat_Massage_Data.Massage_level;  //按摩  0x04~0x06  顶腰：0x01打气 0x02放气 
+                tx_buf[i++] = 0U;
+                tx_buf[i++] = 3U; 
                 tx_buf[i++] = sys_Fan_Heat_Massage_Data1.fan_level;      //通风  
                 tx_buf[i++] = sys_Fan_Heat_Massage_Data1.hot_level;      //加热
                 j 			= checksum8(tx_buf, i);
@@ -457,7 +655,13 @@ void fan_heat_massage1_tx_Task(void *parameter)
                 break;
 
             default:
+				wait_reply = 0U;
                 break;
+            }
+			if (wait_reply == 0U)
+            {
+                Reply_flag1 = RESET;
+                continue;
             }
             send_id++;
 			

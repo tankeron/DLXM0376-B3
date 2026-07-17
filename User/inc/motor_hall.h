@@ -6,6 +6,11 @@
 #define ENABLE_HALL 0
 
 #define MAX_MOTOR_NUM   3
+#define NORMAL_MOTOR_NUM  2U
+#if NORMAL_MOTOR_NUM > MAX_MOTOR_NUM
+#error "NORMAL_MOTOR_NUM must not exceed MAX_MOTOR_NUM"
+#endif
+
 #define MAX_MOTOR_STEP  0XFFFF
 #define MIN_ERR         10
 #define MAX_TIMEROUT    100

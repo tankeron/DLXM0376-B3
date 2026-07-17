@@ -12,6 +12,7 @@
  *******************************************************/
  
 #include "key.h"
+#include "fan_heat_massage.h"
 #include "motor_hall.h"
 #include "ble_module.h"
 /*******************************************************
@@ -138,7 +139,7 @@ void KeyScanTask(void *pvParameters)
 
 void KeyEventHandlerTask(void *pvParameters)
 {
-	uint16_t motor_cmd_t[MAX_MOTOR_NUM];
+	uint16_t motor_cmd_t[MAX_MOTOR_NUM] = {0};
     KeyEventInfo_t key_event;
     while (1)
     {
@@ -147,6 +148,7 @@ void KeyEventHandlerTask(void *pvParameters)
             switch (key_event.event)
             {
             case KEY_EVENT_PRESS:
+				Massage_Motor_Set_All_Retract(1U);
 				if(xTimerIsTimerActive(xTimer_HeartBeatTimeout) == pdTRUE)//有心跳 home功能
 				{
 					motor_cmd_t[0] = 	pull;
@@ -166,6 +168,7 @@ void KeyEventHandlerTask(void *pvParameters)
                 break;
             case KEY_EVENT_RELEASE_SHORT:
             case KEY_EVENT_RELEASE_LONG:
+				Massage_Motor_Set_All_Retract(0U);
 				motor_cmd_t[0] = 	stop;
 				motor_cmd_t[1] = 	stop;
 //				motor_cmd_t[2] = 	stop;

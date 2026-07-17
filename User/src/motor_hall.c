@@ -1,6 +1,9 @@
 #include "motor_hall.h"
 
 #if ENABLE_HALL
+#if NORMAL_MOTOR_NUM > MAX_MOTOR_NUM
+#error "NORMAL_MOTOR_NUM must not exceed MAX_MOTOR_NUM"
+#endif
 
 motor_port_t motor_port[MAX_MOTOR_NUM] = {
     {GPIOB,GPIO_PIN_10,GPIOB,GPIO_PIN_2,    GPIOA,GPIO_PIN_8,GPIOA,GPIO_PIN_9},
@@ -384,7 +387,7 @@ void Motor_Task(void* parameter)
         /* code */
         if (xQueueReceive(motor_queue, &motor_cmd, 2) == pdTRUE)
         {
-			for(uint8_t j = 0;j<MAX_MOTOR_NUM;j++)
+			for(uint8_t j = 0;j<NORMAL_MOTOR_NUM;j++)
 			{
 				if(motor_cmd[j] == stop)
 				{
