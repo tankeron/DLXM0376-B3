@@ -43,7 +43,6 @@
 /* Ensure stdint is only used by the compiler, and not the assembler. */
 #if defined(__ICCARM__) || defined(__CC_ARM) || defined(__GNUC__)
     #include <stdint.h>
-	#include "SEGGER_SYSVIEW_FreeRTOS.h"
     extern uint32_t SystemCoreClock;
 #endif
 
@@ -55,23 +54,21 @@
 #define configTICK_RATE_HZ				( ( TickType_t ) 1000 )
 #define configMAX_PRIORITIES			( 5 )
 #define configMINIMAL_STACK_SIZE		( ( unsigned short ) 130 )
-#define configTOTAL_HEAP_SIZE			( ( size_t ) ( 10 * 1024 ) )
+#define configTOTAL_HEAP_SIZE			( ( size_t ) ( 12 * 1024 ) )
 #define configMAX_TASK_NAME_LEN			( 10 )
-#define configUSE_TRACE_FACILITY		1
+#define configUSE_TRACE_FACILITY		0
 #define configUSE_16_BIT_TICKS			0
 #define configIDLE_SHOULD_YIELD			1
 #define configUSE_MUTEXES				1
-#define configQUEUE_REGISTRY_SIZE		8
-#define configCHECK_FOR_STACK_OVERFLOW	0
+#define configQUEUE_REGISTRY_SIZE		0
+#define configCHECK_FOR_STACK_OVERFLOW	2
 #define configUSE_RECURSIVE_MUTEXES		1
-#define configUSE_MALLOC_FAILED_HOOK	0
+#define configUSE_MALLOC_FAILED_HOOK	1
 #define configUSE_APPLICATION_TASK_TAG	0
 #define configUSE_COUNTING_SEMAPHORES	1
 #define configGENERATE_RUN_TIME_STATS   0
-#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS()  SEGGER_SYSVIEW_Conf();  // SystemView 自带的初始化
-#define portGET_RUN_TIME_COUNTER_VALUE() SEGGER_SYSVIEW_GET_TIMESTAMP()   // 使用 SystemView 的时间戳
-#define configUSE_STATS_FORMATTING_FUNCTIONS 1
-#define configUSE_SEGGER_SYSTEM_VIEWER_HOOKS 1
+#define configUSE_STATS_FORMATTING_FUNCTIONS 0
+#define configUSE_SEGGER_SYSTEM_VIEWER_HOOKS 0
 
 /* Software timer definitions. */
 #define configUSE_TIMERS				1

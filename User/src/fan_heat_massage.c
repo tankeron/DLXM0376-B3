@@ -7,7 +7,8 @@ uint8_t tx_buf1[MAX_TX_BUF_SIZE];
 
 uint8_t rx_buf1[MAX_RX_BUF_SIZE];
 
-uint8_t rx_count1 = 0;
+volatile uint8_t rx_count1 = 0;
+static volatile uint8_t rx_overflow1 = 0;
 FlagStatus Reply_flag1 = RESET;
 
 QueueHandle_t Set_Fan_Heat_Massage_Queue1 = NULL;
@@ -255,14 +256,18 @@ void USART2_IRQHandler(void)
 {
     INTStatus status;
     uint8_t rx_data;
-    uint8_t check;
     Fan_Heat_Massage_Typedef Fan_Heat_Massage_Data;
-    
+
     if (USART_Interrupt_Status_Get(USART2, USART_INT_RXDNE) == SET)
     {
+        rx_data = USART_Data_Receive(USART2);
         if (rx_count1 < MAX_RX_BUF_SIZE)
         {
-            rx_buf1[rx_count1++] = USART_Data_Receive(USART2); // 接收数据字节
+            rx_buf1[rx_count1++] = rx_data;
+        }
+        else
+        {
+            rx_overflow1 = 1;
         }
         USART_Interrupt_Status_Clear(USART2, USART_INT_RXDNE);
     }
@@ -271,16 +276,27 @@ void USART2_IRQHandler(void)
     {
         status = USART_Interrupt_Status_Get(USART2, USART_INT_IDLEF);
         rx_data = USART_Data_Receive(USART2);
-        if (rx_buf1[0] == 0xd0 && rx_buf1[1] == 0xd0 && Reply_flag1 == SET)
+        if (rx_overflow1 == 0 && rx_count1 >= 10 &&
+            rx_buf1[0] == 0xd0 && rx_buf1[1] == 0xd0 && Reply_flag1 == SET)
         {
             if (rx_buf1[rx_count1 - 1] == checksum8(rx_buf1, rx_count1 - 1))
             {
                 Fan_Heat_Massage_Data.Massage_level = rx_buf1[6];
                 Fan_Heat_Massage_Data.fan_level = rx_buf1[7];
                 Fan_Heat_Massage_Data.hot_level = rx_buf1[8];
-                xQueueSendFromISR( Get_Fan_Heat_Massage_Queue1, &Fan_Heat_Massage_Data, NULL);
+                xQueueSendFromISR(Get_Fan_Heat_Massage_Queue1, &Fan_Heat_Massage_Data, NULL);
             }
         }
-		rx_count1 = 0;
+        rx_count1 = 0;
+        rx_overflow1 = 0;
+    }
+
+    if ((USART_Flag_Status_Get(USART2, USART_FLAG_OREF) != RESET) ||
+        (USART_Flag_Status_Get(USART2, USART_FLAG_NEF) != RESET)  ||
+        (USART_Flag_Status_Get(USART2, USART_FLAG_PEF) != RESET)  ||
+        (USART_Flag_Status_Get(USART2, USART_FLAG_FEF) != RESET))
+    {
+        (void)USART2->STS;
+        (void)USART2->DAT;
     }
 }
