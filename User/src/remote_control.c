@@ -8,8 +8,9 @@
 #define REMOTE_TX_BUF_LEN 20
 #define REMOTE_RX_BUF_LEN 20
 uint8_t remote_tx_buf[REMOTE_TX_BUF_LEN] = {0};
-uint8_t remote_rx_buf[REMOTE_TX_BUF_LEN] = {0};
-uint8_t remote_rx_count = 0;
+uint8_t remote_rx_buf[REMOTE_RX_BUF_LEN] = {0};
+volatile uint8_t remote_rx_count = 0;
+static volatile uint8_t remote_rx_overflow = 0;
 
 
 void RwIoInit(void)
@@ -155,69 +156,81 @@ void Remote_Task(void *parameter)
 
 void UART3_IRQHandler(void)
 {
-	uint16_t moto_cmd[MAX_MOTOR_NUM];
     INTStatus status;
     uint8_t rx_data;
-    uint8_t check;
-	uint8_t mac_temp[6];
+
     if (USART_Interrupt_Status_Get(UART3, USART_INT_RXDNE) == SET)
     {
-		rx_data = USART_Data_Receive(UART3); // 接收数据字节
+        rx_data = USART_Data_Receive(UART3);
         if (remote_rx_count < REMOTE_RX_BUF_LEN)
         {
-            remote_rx_buf[remote_rx_count++] = rx_data; // 接收数据字节
+            remote_rx_buf[remote_rx_count++] = rx_data;
+        }
+        else
+        {
+            remote_rx_overflow = 1;
         }
         USART_Interrupt_Status_Clear(UART3, USART_INT_RXDNE);
     }
-	
+
     if (USART_Interrupt_Status_Get(UART3, USART_INT_IDLEF) == SET)
     {
         status = USART_Interrupt_Status_Get(UART3, USART_INT_IDLEF);
         rx_data = USART_Data_Receive(UART3);
-        if(remote_rx_count > 4)
+        if(remote_rx_overflow == 0 && remote_rx_count > 4)
         {
             if(remote_rx_buf[0] == 0x55 && remote_rx_buf[1] == 0xaa)
             {
-                if(remote_rx_buf[remote_rx_count-1] == remote_check_sum(remote_rx_buf,remote_rx_count-1))
+                if(remote_rx_buf[remote_rx_count-1] == remote_check_sum(remote_rx_buf, remote_rx_count-1))
                 {
-					switch(remote_rx_buf[3])
-					{
-						case MACHINE_BLE_REST:
-							CMD = CMD_AURACAST_ON_OFF;
-							xQueueSendFromISR(Sound_Box_CMD_Queue, &CMD, 0);
-						break;
-						case MACHINE_BLE_DISCONNECT:
-							CMD = CMD_BLE_DISABLE;
-							xQueueSendFromISR(Sound_Box_CMD_Queue, &CMD, 0);
-						break;
-						case MACHINE_UP_LIGHT:
-							rgb_d = RGB_COLOR_UP;
-							xQueueSendFromISR(RGB_Cmd_Queue, &rgb_d, 0);
-						break;
-						case MACHINE_DOWN_LIGHT:
-							rgb_d = RGB_COLOR_DOWN;
-							xQueueSendFromISR(RGB_Cmd_Queue, &rgb_d, 0);
-						break;
-						case MACHINE_UP_SHAKE:
-							CMD = CMD_VIBRATE_UP;
-							xQueueSendFromISR(Sound_Box_CMD_Queue, &CMD, 0);
-						break;
-						case MACHINE_DOWN_SHAKE:
-							CMD = CMD_VIBRATE_DOWN;
-							xQueueSendFromISR(Sound_Box_CMD_Queue, &CMD, 0);
-						break;
-						case MACHINE_UP_VOL:
-							CMD = CMD_VOLUME_UP;
-							xQueueSendFromISR(Sound_Box_CMD_Queue, &CMD, 0);
-						break;
-						case MACHINE_DOWN_VOL:
-							CMD = CMD_VOLUME_DOWN;
-							xQueueSendFromISR(Sound_Box_CMD_Queue, &CMD, 0);
-						break;
-					}
+                    switch(remote_rx_buf[3])
+                    {
+                        case MACHINE_BLE_REST:
+                            CMD = CMD_AURACAST_ON_OFF;
+                            xQueueSendFromISR(Sound_Box_CMD_Queue, &CMD, 0);
+                        break;
+                        case MACHINE_BLE_DISCONNECT:
+                            CMD = CMD_BLE_DISABLE;
+                            xQueueSendFromISR(Sound_Box_CMD_Queue, &CMD, 0);
+                        break;
+                        case MACHINE_UP_LIGHT:
+                            rgb_d = RGB_COLOR_UP;
+                            xQueueSendFromISR(RGB_Cmd_Queue, &rgb_d, 0);
+                        break;
+                        case MACHINE_DOWN_LIGHT:
+                            rgb_d = RGB_COLOR_DOWN;
+                            xQueueSendFromISR(RGB_Cmd_Queue, &rgb_d, 0);
+                        break;
+                        case MACHINE_UP_SHAKE:
+                            CMD = CMD_VIBRATE_UP;
+                            xQueueSendFromISR(Sound_Box_CMD_Queue, &CMD, 0);
+                        break;
+                        case MACHINE_DOWN_SHAKE:
+                            CMD = CMD_VIBRATE_DOWN;
+                            xQueueSendFromISR(Sound_Box_CMD_Queue, &CMD, 0);
+                        break;
+                        case MACHINE_UP_VOL:
+                            CMD = CMD_VOLUME_UP;
+                            xQueueSendFromISR(Sound_Box_CMD_Queue, &CMD, 0);
+                        break;
+                        case MACHINE_DOWN_VOL:
+                            CMD = CMD_VOLUME_DOWN;
+                            xQueueSendFromISR(Sound_Box_CMD_Queue, &CMD, 0);
+                        break;
+                    }
                 }
             }
         }
-		remote_rx_count = 0;
+        remote_rx_count = 0;
+        remote_rx_overflow = 0;
+    }
+
+    if ((USART_Flag_Status_Get(UART3, USART_FLAG_OREF) != RESET) ||
+        (USART_Flag_Status_Get(UART3, USART_FLAG_NEF) != RESET)  ||
+        (USART_Flag_Status_Get(UART3, USART_FLAG_PEF) != RESET)  ||
+        (USART_Flag_Status_Get(UART3, USART_FLAG_FEF) != RESET))
+    {
+        (void)UART3->STS;
+        (void)UART3->DAT;
     }
 }

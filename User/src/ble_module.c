@@ -130,18 +130,23 @@ uint8_t check_sum(uint8_t *data, uint8_t size)
     return sum;
 }
 
-uint8_t ble_rx_count = 0;
+volatile uint8_t ble_rx_count = 0;
+static volatile uint8_t ble_rx_overflow = 0;
 void UART4_IRQHandler(void)//主蓝牙芯片
 {
     uint8_t rx_data;
-//    uint8_t check;
     FlagStatus status;
 
     if (USART_Interrupt_Status_Get(UART4, USART_INT_RXDNE) == SET)
     {
-        if(ble_rx_count<BLE_MAX_BUF_LEN)
+        rx_data = USART_Data_Receive(UART4);
+        if(ble_rx_count < BLE_MAX_BUF_LEN)
         {
-            ble_rx_buf[ble_rx_count++] = USART_Data_Receive(UART4);   //接收数据字节
+            ble_rx_buf[ble_rx_count++] = rx_data;
+        }
+        else
+        {
+            ble_rx_overflow = 1;
         }
         xTimerResetFromISR(xTimer_UsartTimeout, 0);
         USART_Interrupt_Status_Clear(UART4, USART_INT_RXDNE);
@@ -149,40 +154,51 @@ void UART4_IRQHandler(void)//主蓝牙芯片
 
     if (USART_Interrupt_Status_Get(UART4, USART_INT_IDLEF) == SET)
     {
-        // if(ble_rx_count > 4)
-        // {
-        //     check =  check_sum(ble_rx_buf,ble_rx_count-1);
-        //     if(ble_rx_buf[0] == 0xd0 && ble_rx_buf[1] == 0xd0)
-        //     {
-        //         if(ble_rx_buf[ble_rx_count-1] == check)
-        //         {
-        //             xQueueSendFromISR(ble_rx_queue, &ble_rx_buf, NULL);
-        //         }
-        //     }
-        // }
-        // ble_rx_count = 0;
-        status = USART_Interrupt_Status_Get(UART4,USART_INT_IDLEF);
+        status = USART_Interrupt_Status_Get(UART4, USART_INT_IDLEF);
         rx_data = USART_Data_Receive(UART4);
+    }
+
+    if ((USART_Flag_Status_Get(UART4, USART_FLAG_OREF) != RESET) ||
+        (USART_Flag_Status_Get(UART4, USART_FLAG_NEF) != RESET)  ||
+        (USART_Flag_Status_Get(UART4, USART_FLAG_PEF) != RESET)  ||
+        (USART_Flag_Status_Get(UART4, USART_FLAG_FEF) != RESET))
+    {
+        (void)UART4->STS;
+        (void)UART4->DAT;
     }
 }
 
 void UsartTimeoutCallback(TimerHandle_t xTimer)//仓体蓝牙芯片发过来的数据
 {
+    uint8_t ble_rx_frame[BLE_MAX_BUF_LEN];
+    uint8_t ble_rx_len;
+    uint8_t ble_rx_frame_overflow;
     uint8_t check;
-    if(ble_rx_count > 4)
+    uint8_t i;
+
+    taskENTER_CRITICAL();
+    ble_rx_len = ble_rx_count;
+    ble_rx_frame_overflow = ble_rx_overflow;
+    for(i = 0; i < ble_rx_len; i++)
     {
-        check =  check_sum(ble_rx_buf,ble_rx_count-1);
-        if(ble_rx_buf[0] == 0x55 && ble_rx_buf[1] == 0xaa)
-        {
-            if(ble_rx_buf[ble_rx_count-1] == check)
-            {
-                xQueueSend(ble_rx_queue, &ble_rx_buf, NULL);
-            }
-        }
+        ble_rx_frame[i] = ble_rx_buf[i];
     }
     ble_rx_count = 0;
-}
+    ble_rx_overflow = 0;
+    taskEXIT_CRITICAL();
 
+    if(ble_rx_frame_overflow != 0 || ble_rx_len <= 4)
+    {
+        return;
+    }
+
+    check = check_sum(ble_rx_frame, ble_rx_len - 1);
+    if(ble_rx_frame[0] == 0x55 && ble_rx_frame[1] == 0xaa &&
+       ble_rx_frame[ble_rx_len - 1] == check)
+    {
+        xQueueSend(ble_rx_queue, ble_rx_frame, 0);
+    }
+}
 
 void ble_control_Task(void* parameter)
 {

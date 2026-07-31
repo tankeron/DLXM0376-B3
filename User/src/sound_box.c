@@ -3,8 +3,9 @@
 #define SOUND_TX_BUF_LEN 10
 #define SOUND_RX_BUF_LEN 10
 uint8_t Sound_tx_buf[SOUND_TX_BUF_LEN] = {0};
-uint8_t Sound_rx_buf[SOUND_RX_BUF_LEN] = {0};
-uint8_t sound_rx_count = 0;
+volatile uint8_t Sound_rx_buf[SOUND_RX_BUF_LEN] = {0};
+volatile uint8_t sound_rx_count = 0;
+static volatile uint8_t sound_rx_overflow = 0;
 uint8_t sound_tx_id = 0;
 QueueHandle_t Sound_Box_CMD_Queue = NULL;
 QueueHandle_t Sound_Box_Reply_Queue = NULL;
@@ -312,40 +313,75 @@ void Sound_Box_Task(void *parameter)
 
 void USART1_IRQHandler(void)
 {
-    INTStatus status;
     uint8_t rx_data;
+
     if (USART_Interrupt_Status_Get(USART1, USART_INT_RXDNE) == SET)
     {
+        rx_data = USART_Data_Receive(USART1);
         if (sound_rx_count < SOUND_RX_BUF_LEN)
         {
-            Sound_rx_buf[sound_rx_count++] = USART_Data_Receive(USART1); // 接收数据字节
+            Sound_rx_buf[sound_rx_count++] = rx_data;
+        }
+        else
+        {
+            sound_rx_overflow = 1;
         }
         xTimerResetFromISR(xTimer_UsartSoundTimeout, 0);
         USART_Interrupt_Status_Clear(USART1, USART_INT_RXDNE);
+    }
+
+    if ((USART_Flag_Status_Get(USART1, USART_FLAG_OREF) != RESET) ||
+        (USART_Flag_Status_Get(USART1, USART_FLAG_NEF) != RESET)  ||
+        (USART_Flag_Status_Get(USART1, USART_FLAG_PEF) != RESET)  ||
+        (USART_Flag_Status_Get(USART1, USART_FLAG_FEF) != RESET))
+    {
+        (void)USART1->STS;
+        (void)USART1->DAT;
     }
 }
 FlagStatus power_on_flag = RESET;
 void UsartSoundTimeoutCallback(TimerHandle_t xTimer)
 {
-    uint8_t check;
+    uint8_t sound_rx_frame[SOUND_RX_BUF_LEN];
+    uint8_t sound_rx_len;
+    uint8_t sound_rx_frame_overflow;
+    uint8_t i;
     Sound_CMD_Typedef Sound_Reply;
-    if(sound_rx_count > 4)
+
+    taskENTER_CRITICAL();
+    sound_rx_len = sound_rx_count;
+    sound_rx_frame_overflow = sound_rx_overflow;
+    for(i = 0; i < sound_rx_len; i++)
     {
-        if(Sound_rx_buf[0] == 0x55 && Sound_rx_buf[1] == 0xaa)
+        sound_rx_frame[i] = Sound_rx_buf[i];
+    }
+    sound_rx_count = 0;
+    sound_rx_overflow = 0;
+    taskEXIT_CRITICAL();
+
+    if(sound_rx_frame_overflow != 0)
+    {
+        return;
+    }
+
+    if(sound_rx_len > 4)
+    {
+        if(sound_rx_frame[0] == 0x55 && sound_rx_frame[1] == 0xaa)
         {
-            if(Sound_rx_buf[sound_rx_count-1] == sound_check_sum(Sound_rx_buf,sound_rx_count-1))
+            if(sound_rx_frame[sound_rx_len-1] == sound_check_sum(sound_rx_frame, sound_rx_len-1))
             {
-                if(wait_reply_flag == SET && Sound_rx_buf[3] == wait_reply_cmd)
+                if(wait_reply_flag == SET && sound_rx_frame[3] == wait_reply_cmd)
                 {
                     Sound_Reply.msg_fun = 0;
-                    Sound_Reply.msg_data = Sound_rx_buf[3];
-                    xQueueSend( Sound_Box_Reply_Queue, &Sound_Reply, NULL);
+                    Sound_Reply.msg_data = sound_rx_frame[3];
+                    xQueueSend(Sound_Box_Reply_Queue, &Sound_Reply, 0);
                 }
 
-                if(Sound_rx_buf[3] == 0xff && Sound_rx_buf[4] == 0x02 && power_on_flag == RESET)
+                if(sound_rx_frame[3] == 0xff && sound_rx_frame[4] == 0x02 && power_on_flag == RESET)
                 {
-                    power_on_flag = SET;
                     Sound_CMD_Typedef Sound_CMD;
+
+                    power_on_flag = SET;
                     Sound_CMD.msg_fun = 0x05;
                     Sound_CMD.msg_data = 0;
                     xQueueSend(Sound_Box_CMD_Queue, &Sound_CMD, 0);
@@ -353,5 +389,4 @@ void UsartSoundTimeoutCallback(TimerHandle_t xTimer)
             }
         }
     }
-    sound_rx_count = 0;
 }

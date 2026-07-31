@@ -15,6 +15,29 @@
 #include "bsp_spi.h"
 
 ErrorStatus HSIStartUpStatus;
+volatile uint32_t FreeRTOSFaultCode = 0U;
+volatile TaskHandle_t FreeRTOSFaultTaskHandle = NULL;
+volatile const char *FreeRTOSFaultTaskName = NULL;
+
+void vApplicationMallocFailedHook(void)
+{
+    FreeRTOSFaultCode = 1U;
+    taskDISABLE_INTERRUPTS();
+    while (1)
+    {
+    }
+}
+
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+    FreeRTOSFaultTaskName = pcTaskName;
+    FreeRTOSFaultCode = 2U;
+    FreeRTOSFaultTaskHandle = xTask;
+    taskDISABLE_INTERRUPTS();
+    while (1)
+    {
+    }
+}
 
 void system_clock_init(void)
 {
@@ -138,7 +161,7 @@ int main(void)
 						  
 	xReturn = xTaskCreate((TaskFunction_t)bsp_spi_Task, 
 						  (const char *)"bsp_spi_Task",
-						  (uint16_t)64,						  
+						  (uint16_t)96,						  
 						  (void *)NULL,						 
 						  (UBaseType_t)1,						  
 						  (TaskHandle_t *)rgb_spi_Handle);	
@@ -170,7 +193,7 @@ int main(void)
 						  
 	xReturn = xTaskCreate((TaskFunction_t)Sound_Box_Task, 
 						  (const char *)"Sound_Box_Task",
-						  (uint16_t)64,						  
+						  (uint16_t)96,						  
 						  (void *)NULL,						 
 						  (UBaseType_t)1,						  
 						  NULL);
@@ -178,7 +201,7 @@ int main(void)
 
 	xReturn = xTaskCreate((TaskFunction_t)Sound_Box_Config_Task, 
 						  (const char *)"Sound_Box_Config_Task",
-						  (uint16_t)64,						  
+						  (uint16_t)96,						  
 						  (void *)NULL,						 
 						  (UBaseType_t)1,						  
 						  NULL);
@@ -186,7 +209,7 @@ int main(void)
 						  
 	xReturn = xTaskCreate((TaskFunction_t)KeyScanTask,
 						  (const char *)"KeyScanTask",
-						  (uint16_t)64,						
+						  (uint16_t)96,						
 						  (void *)NULL,						
 						  (UBaseType_t)1,						
 						  NULL);
@@ -194,7 +217,7 @@ int main(void)
 						  
 	xReturn = xTaskCreate((TaskFunction_t)KeyEventHandlerTask,
 						  (const char *)"KeyEventHandlerTask",
-						  (uint16_t)64,						
+						  (uint16_t)96,						
 						  (void *)NULL,						
 						  (UBaseType_t)1,						
 						  NULL);
